@@ -1,0 +1,360 @@
+<!DOCTYPE HTML>
+<html>
+<head>
+    <title>Webcam over WebSocket using OpenCV and Tornado</title>
+    <meta charset="utf-8">
+    <script src="http://code.jquery.com/jquery-2.2.4.min.js"></script>
+    <link rel="stylesheet" href="index.css">
+    <link rel="stylesheet" href="https://maxcdn.bootstrapcdn.com/bootstrap/3.3.7/css/bootstrap.min.css">
+    <script src="https://ajax.googleapis.com/ajax/libs/jquery/3.2.1/jquery.min.js"></script>
+    <script src="https://maxcdn.bootstrapcdn.com/bootstrap/3.3.7/js/bootstrap.min.js"></script>
+</head>
+<body>
+<div class="container">
+    <h2>Virtual eyewear</h2>
+    <p>This is a demo for our virtual glass app.</p>
+    <ul class="nav nav-tabs">
+        <li class="active"><a data-toggle="tab" href="#default">Default</a></li>
+        <li><a data-toggle="tab" href="#synced">Synced</a></li>
+        <li><a data-toggle="tab" href="#debug">Debug</a></li>
+        <li><a data-toggle="tab" href="#small">Debug Video</a></li>
+    </ul>
+    <br>
+    <div id="btn-group">
+        <button id="start">Start</button>
+        <button id="hflip">Hflip</button>
+        <button id="vflip">Vflip</button>
+        <button id="live">Live</button>
+        <button id="fast">Fast</button>
+        <button :not(:last)id="slow">Slow</button>
+    </div>
+    <div class="tab-content">
+        <div id="default" class="tab-pane fade in active">
+            <br>
+            <p>Click on start to begin the demo.</p>
+            <br>
+            <div id="tryon">
+                <video id="camera-fake" loop></video>
+                <canvas id="overlay"></canvas>
+            </div>
+            <div id="position">
+                <div id="switch">
+                    Manual/Auto <br>
+                    <label class="switch">
+                        <input id="manual" type="checkbox">
+                        <span class="slider"></span>
+                    </label>
+                </div>
+                <div id="manual-pos">
+                    <br>
+                    posx:
+                    <label class="tvec">
+                        <input id="posx" type="number" name="quantity" min="-5000" max="5000" value="0">
+                    </label>
+                    <br>
+                    posy:
+                    <label>
+                        <input id="posy" type="number" name="quantity" min="-5000" max="5000" value="0">
+                    </label>
+                    <br>
+                    posz:
+                    <label>
+                        <input id="posz" type="number" name="quantity" min="-5000" max="5000" value="0">
+                    </label>
+                    <br>
+                    size:
+                    <label>
+                        <input id="size" type="number" name="quantity" min="-5000" max="5000" value="180">
+                    </label>
+                    <br>
+                    rotx:
+                    <label class="tvec">
+                        <input id="rotx" type="number" name="quantity" min="-5000" max="5000" value="0">
+                    </label>
+                    <br>
+                    roty:
+                    <label>
+                        <input id="roty" type="number" name="quantity" min="-5000" max="5000" value="0">
+                    </label>
+                    <br>
+                    rotz:
+                    <label>
+                        <input id="rotz" type="number" name="quantity" min="-5000" max="5000" value="0">
+                    </label>
+                </div>
+                <div id="auto-pos">
+                    <br>
+                    posx auto:
+                    <label class="tvec">
+                        <input id="posx_auto" type="number" name="quantity" min="-5000" max="5000" value="0">
+                    </label>
+                    <br>
+                    posy auto:
+                    <label>
+                        <input id="posy_auto" type="number" name="quantity" min="-5000" max="5000" value="0">
+                    </label>
+                    <br>
+                    posz auto:
+                    <label>
+                        <input id="posz_auto" type="number" name="quantity" min="-5000" max="5000" value="0">
+                    </label>
+                </div>
+            </div>
+        </div>
+        <div id="synced" class="tab-pane fade">
+            <br>
+            <p>This is a delayed stream, there's more latency with this one.</p>
+            <br>
+            <div id="live-tryon">
+                <img id="camera" src="/">
+            </div>
+        </div>
+        <div id="debug" class="tab-pane fade">
+            <br>
+            <p>This tab is here for debugging purposes.</p>
+            <br>
+            <canvas id="notoverlay"></canvas>
+        </div>
+        <div id="small" class="tab-pane fade">
+            <br>
+            <br>
+        </div>
+    </div>
+    <div id="debug"></div>
+</div>
+
+<!-- jquery -->
+<script src="https://ajax.googleapis.com/ajax/libs/jquery/1.11.2/jquery.min.js"></script>
+<script src="js/utils.js"></script>
+<!-- three.js r54 -->
+<script src="js/three.js"></script>
+<script src="js/try_on_face.js"></script>
+<script src="https://zurb.com/playground/uploads/upload/upload/330/stackblur.min.js"></script>
+<script type="text/javascript" charset="utf-8">
+    /*
+ * Configure Tabs
+ */
+    $(document).on('click', 'a[data-toggle="tab"]', function (e) {
+        var s = e.target.href;
+        var i = s.indexOf('#');
+        var f = s.slice(i); // activated tab
+        if (f == "#synced") {
+            $("#overlay").appendTo("#live-tryon");
+        }
+        if (f == "#default") {
+            $("#overlay").appendTo("#tryon");
+        }
+    });
+</script>
+
+<script>
+    var tmp = null;
+    var VideoStream = function () {
+        this.update = null;
+        this.data = null;
+        this.ready = null;
+        this.fps = 20;
+        this.count = 0;
+        this.speed = 1;
+        this.opacity = 1;
+
+        this.video = document.getElementById('camera');
+        this.updatePosition = function () {
+            if (this.data) {
+                $("#posx_auto").val(this.data.position.x);
+                $("#posy_auto").val(this.data.position.y);
+                $("#posz_auto").val(this.data.position.z);
+
+                manual = $("#manual")[0].checked;
+                if (manual) {
+                    this.data.position = {
+                        x: $("#posx").val(),
+                        y: $("#posy").val(),
+                        z: $("#posz").val()
+                    };
+                    this.data.size.x = $("#size").val();
+                } else {
+                    $("#posx").val(this.data.position.x);
+                    $("#posy").val(this.data.position.y);
+                    $("#posz").val(this.data.position.z);
+                    if (this.data.opacity) {
+                    }
+                }
+            }
+        }
+        this.momentum = 1.;
+        this.momentum_opacity = .05;
+        this.lag = 0;
+        this.begin = null;
+        this.last = new Date();
+    }
+
+    var interval = 50;
+    var stream = new VideoStream();
+
+    // We will draw the camera on notoverlay and stream it to the tornado server
+    var notoverlay = document.getElementById("notoverlay");
+    notoverlay.width = 320;
+    notoverlay.height = 240;
+    ctx = notoverlay.getContext('2d');
+
+    // This where the raw webcam stream
+    this.videoStream = document.getElementById('camera-fake');
+    this.videoStream.setAttribute('width', this.width);
+    this.videoStream.setAttribute('height', this.height);
+
+
+    // Connection to websocket
+    var last_message = 0;
+    var connect2Websocket = function () {
+        if ("WebSocket" in window) {
+
+            var ws_path = 'ws://' + window.location.host + window.location.pathname + 'ws';
+            var ws = new WebSocket(ws_path);
+
+            ws.onopen = function () {
+                stream.begin = new Date();
+                ws.send(1);
+            };
+
+            ws.onclose = function () {
+                //clearInterval(stream.update);
+            };
+
+            ws.onmessage = function (msg) {
+                stream.data = JSON.parse(msg.data);
+                stream.count = stream.count - 1;
+                if (last_message < stream.data.timestamp) {
+                    last_message = stream.data.timestamp;
+                    stream.video.setAttribute("src", stream.data['image']);
+                    stream.fps = stream.data['speed'];
+                    stream.begin = new Date();
+                }
+            };
+
+            ws.onerror = function (e) {
+                console.log(e);
+                ws.send(1);
+            };
+
+            return ws;
+
+        } else {
+            alert("WebSocket not supported");
+        }
+    };
+</script>
+
+<script>
+    // Define glasses
+    var object = {
+        outside: {
+            left: "/glasses/left.png",
+            right: "/glasses/right.png",
+            front: "/glasses/front.png"
+
+        }
+    };
+
+    // Initialize tryOn
+    var tryOn = new TryOnFace({
+        opacity: stream.opacity,
+        fps: stream.fps,
+        speed: stream.speed,
+        momentum_opacity: stream.momentum_opacity,
+        momentum: stream.momentum,
+        live_selector: 'live-tryon',
+        selector: 'tryon',
+        width: 640,
+        height: 480,
+        debug: true,
+        object: object,
+        statusHandler: function (status) {
+            switch (status) {
+                case "STATUS_READY": {
+                    /* Ready! Show start button or something... */
+                    $('#start').show();
+                }
+                    ;
+                    break;
+                case "STATUS_CAMERA_ERROR": {
+                    /* Handle camera error */
+                }
+                    ;
+                    break;
+                case "STATUS_SEARCH": {
+                    /* Show some message while searching a face */
+                }
+                    ;
+                    break;
+                case "STATUS_FOUND": {
+                    /* OK! */
+                }
+            }
+        }
+    });
+
+
+    /*
+ *  MENU
+ */
+    $(window).load(function () {
+        $('#start').click(function () {
+            tryOn.start();
+            var ws = connect2Websocket();
+            stream.update = setInterval(function () {
+                stream.lag = Math.abs(new Date() - stream.last);
+                if (stream.count * Math.random() < 1) {
+                    if (stream.begin) {
+                        ctx.drawImage(videoStream, 0, 0, 320, 240);
+                        var mediumQuality = notoverlay.toDataURL('image/jpeg', 0.3)
+                        var image = mediumQuality.split(',')[1];
+                        message = JSON.stringify(
+                            {
+                                "image": image,
+                                "timestamp": (new Date()).getTime(),
+                                "type": "image"
+                            }
+                        )
+                        ws.send(message);
+                        stream.count = stream.count + 1;
+                    }
+                } else {
+                    if (stream.count > 8) {
+                        stream.count = 0;
+                        last_message = (new Date()).getTime();
+                    }
+                }
+                stream.updatePosition()
+                tryOn.update(stream);
+                stream.last = new Date();
+            }, interval)
+            tryOn.loop();
+        });
+
+        $('#vflip').click(function () {
+            ctx.translate(0, 240);
+            ctx.scale(1, -1);
+        });
+
+        $('#slow').click(function () {
+            stream.speed = 3. - stream.speed;
+        });
+        $('#fast').click(function () {
+            stream.momentum = 1.05 - stream.momentum;
+            tryOn.update(stream);
+        });
+        $('.home a').click(function () {
+            $("#overlay").appendTo("#tryon")
+        });
+        $('#hflip').click(function () {
+            ctx.translate(320, 0);
+            ctx.scale(-1, 1);
+        });
+    });
+
+</script>
+
+
+</body>
+</html> 

@@ -1,0 +1,8 @@
+coils
+dlib
+eos-py
+imutils
+numpy
+opencv-python
+tornado
+pillow
